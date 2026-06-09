@@ -1,1 +1,1 @@
-# AI-Attendance-System-Using-Face-Recognition
+# Fake News Detection Web App
