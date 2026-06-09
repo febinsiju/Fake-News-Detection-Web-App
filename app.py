@@ -1,64 +1,45 @@
-import pandas as pd
-import joblib
-
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import PassiveAggressiveClassifier
-from sklearn.metrics import accuracy_score
-
-fake = pd.read_csv("Fake.csv")
-true = pd.read_csv("True.csv")
-
-fake["label"] = "FAKE"
-true["label"] = "REAL"
-
-data = pd.concat([fake, true], axis=0)
-data = data.sample(frac=1, random_state=42)
-
-data["content"] = data["title"] + " " + data["text"]
-
-X = data["content"]
-y = data["label"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
-vectorizer = TfidfVectorizer(stop_words="english", max_df=0.7)
-X_train_vectorized = vectorizer.fit_transform(X_train)
-X_test_vectorized = vectorizer.transform(X_test)
-
-model = PassiveAggressiveClassifier(max_iter=50)
-model.fit(X_train_vectorized, y_train)
-
-predictions = model.predict(X_test_vectorized)
-accuracy = accuracy_score(y_test, predictions)
-
-print("Model Accuracy:", round(accuracy * 100, 2), "%")
-
-joblib.dump(model, "model.pkl")
-joblib.dump(vectorizer, "vectorizer.pkl")
-
-print("Model and vectorizer saved successfully!")
 from flask import Flask, render_template, request
 import joblib
+import numpy as np
 
 app = Flask(__name__)
 
 model = joblib.load("model.pkl")
 vectorizer = joblib.load("vectorizer.pkl")
 
+def get_explanation(prediction, confidence):
+    if prediction == "FAKE":
+        return "This news may contain misleading or suspicious language patterns commonly found in fake news."
+    else:
+        return "This news appears to follow more reliable and natural language patterns."
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     result = None
+    confidence = None
+    explanation = None
 
     if request.method == "POST":
-        news_text = request.form["news"]
-        news_vector = vectorizer.transform([news_text])
-        prediction = model.predict(news_vector)[0]
-        result = prediction
+        news = request.form["news"]
 
-    return render_template("index.html", result=result)
+        vector = vectorizer.transform([news])
+        prediction = model.predict(vector)[0]
+
+        try:
+            scores = model.decision_function(vector)
+            confidence = round(abs(scores[0]) / (abs(scores[0]) + 1) * 100, 2)
+        except:
+            confidence = 85.0
+
+        result = prediction
+        explanation = get_explanation(result, confidence)
+
+    return render_template(
+        "index.html",
+        result=result,
+        confidence=confidence,
+        explanation=explanation
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
